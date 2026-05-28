@@ -21,19 +21,27 @@ function extractCondition(line, keyword) {
   return cond;
 }
 
-function extractForParts(line) {
-  const inner = line.replace(/^for\s*\(/, '').replace(/\)\s*\{?\s*$/, '').trim();
-  const parts = inner.split(';');
-  return {
-    init: (parts[0] || '').trim(),
-    condition: (parts[1] || '').trim(),
-    update: (parts[2] || '').trim(),
-  };
-}
-
 /**
  * Build a flowchart tree.
  */
+function parseForHeader(line) {
+  let inner = line.replace(/^for\s*\(\s*/, '');
+  inner = inner.replace(/\s*\)\s*\{?\s*$/, '');
+  const parts = inner.split(';');
+  let condition = '';
+  let update = '';
+  if (parts.length >= 3) {
+    condition = parts[1].trim();
+    update = parts.slice(2).join(';').trim();
+  } else if (parts.length === 2) {
+    condition = parts[0].trim();
+    update = parts[1].trim();
+  } else {
+    condition = parts[0] ? parts[0].trim() : '';
+  }
+  return { condition, update };
+}
+
 function buildTree(lines) {
   const root = [];
   const stack = [{ nodes: root, type: 'root' }];
@@ -112,20 +120,6 @@ function buildTree(lines) {
         break;
       }
 
-      case 'for': {
-        const parts = extractForParts(line);
-        // init as separate process node before the loop
-        if (parts.init) {
-          ctx.nodes.push({ type: 'process', text: parts.init });
-        }
-        // only show condition in diamond (like if)
-        const display = parts.condition || '';
-        const node = { type: 'loop', condition: display, body: [], update: parts.update };
-        ctx.nodes.push(node);
-        stack.push({ nodes: node.body, type: 'for-body', parentNode: node });
-        break;
-      }
-
       case 'while': {
         const condition = extractCondition(line, 'while');
         const node = {
@@ -146,6 +140,19 @@ function buildTree(lines) {
         };
         ctx.nodes.push(node);
         stack.push({ nodes: node.body, type: 'do-body', parentNode: node });
+        break;
+      }
+
+      case 'for': {
+        const { condition, update } = parseForHeader(line);
+        const node = {
+          type: 'forloop',
+          condition: condition,
+          update: update || undefined,
+          body: [],
+        };
+        ctx.nodes.push(node);
+        stack.push({ nodes: node.body, type: 'for-body', parentNode: node });
         break;
       }
 
@@ -221,22 +228,33 @@ export function flattenTree(tree) {
     if (block.length === 0) return { first: null, last: null };
 
     let prev = null;
+    let prevForloopExit = false;
     let blockFirst = null;
     let blockLast = null;
+
+    function connectPrev(id) {
+      if (!prev) return;
+      if (prevForloopExit) {
+        edges.push({ from: prev, to: id, label: 'F', exitRight: true });
+        prevForloopExit = false;
+      } else {
+        edges.push({ from: prev, to: id, label: '' });
+      }
+    }
 
     for (const item of block) {
       if (item.type === 'process') {
         const id = nextId();
         nodes.push({ id, type: 'process', text: item.text, depth });
-        if (prev) edges.push({ from: prev, to: id, label: '' });
-        else blockFirst = id;
+        connectPrev(id);
+        if (!blockFirst) blockFirst = id;
         prev = id;
         blockLast = id;
       } else if (item.type === 'decision') {
         const decId = nextId();
         nodes.push({ id: decId, type: 'decision', text: item.condition, depth });
-        if (prev) edges.push({ from: prev, to: decId, label: '' });
-        else blockFirst = decId;
+        connectPrev(decId);
+        if (!blockFirst) blockFirst = decId;
 
         const trueResult = processBlock(item.trueBranch, depth);
         if (trueResult.first) {
@@ -263,6 +281,27 @@ export function flattenTree(tree) {
 
         prev = mergeId;
         blockLast = mergeId;
+      } else if (item.type === 'forloop') {
+        if (item.update) {
+          item.body.push({ type: 'process', text: item.update });
+        }
+
+        const loopId = nextId();
+        nodes.push({ id: loopId, type: 'forloop', text: item.condition, depth });
+        connectPrev(loopId);
+        if (!blockFirst) blockFirst = loopId;
+
+        const bodyResult = processBlock(item.body, depth);
+        if (bodyResult.first) {
+          edges.push({ from: loopId, to: bodyResult.first, label: 'T' });
+        }
+
+        const loopEnd = bodyResult.last || loopId;
+        edges.push({ from: loopEnd, to: loopId, label: '', loopBack: true });
+
+        prev = loopId;
+        prevForloopExit = true;
+        blockLast = loopId;
       } else if (item.type === 'loop') {
         if (item.update) {
           item.body.push({ type: 'process', text: item.update });
@@ -270,20 +309,20 @@ export function flattenTree(tree) {
 
         const loopId = nextId();
         nodes.push({ id: loopId, type: 'loop', text: item.condition, depth });
-        if (prev) edges.push({ from: prev, to: loopId, label: '' });
-        else blockFirst = loopId;
+        connectPrev(loopId);
+        if (!blockFirst) blockFirst = loopId;
 
-        const bodyResult = processBlock(item.body, depth + 1);
+        const bodyResult = processBlock(item.body, depth);
         if (bodyResult.first) {
           edges.push({ from: loopId, to: bodyResult.first, label: 'T' });
         }
 
         const loopEnd = bodyResult.last || loopId;
-        edges.push({ from: loopEnd, to: loopId, label: 'loop' });
+        edges.push({ from: loopEnd, to: loopId, label: '', loopBack: true });
 
         const exitId = nextId();
-        nodes.push({ id: exitId, type: 'merge', text: '', depth });
-        edges.push({ from: loopId, to: exitId, label: 'F' });
+        nodes.push({ id: exitId, type: 'merge', text: '', depth: depth + 1 });
+        edges.push({ from: loopId, to: exitId, label: 'F', exitRight: true });
 
         prev = exitId;
         blockLast = exitId;

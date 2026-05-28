@@ -35,7 +35,7 @@ function computeNodeDims(node) {
   const lineH = 17;
   const padX = (node.type === 'start' || node.type === 'end') ? 28 : 16;
   const padY = 10;
-  const maxContentW = (node.type === 'decision' || node.type === 'loop') ? 220 : 260;
+  const maxContentW = (node.type === 'decision' || node.type === 'loop' || node.type === 'forloop') ? 220 : 260;
   const charsPerLine = Math.max(1, Math.floor(maxContentW / charW));
 
   let totalLines = 0;
@@ -50,7 +50,7 @@ function computeNodeDims(node) {
   if (node.type === 'start' || node.type === 'end') {
     w = Math.max(START_END_W, Math.ceil(maxLinePx + padX));
     h = Math.max(NODE_MIN_H, Math.ceil(totalLines * lineH + padY));
-  } else if (node.type === 'decision' || node.type === 'loop') {
+  } else if (node.type === 'decision' || node.type === 'loop' || node.type === 'forloop') {
     w = Math.max(120, Math.ceil(maxLinePx + padX));
     h = Math.max(DECISION_H, Math.ceil(totalLines * lineH + padY));
   } else {
@@ -91,7 +91,15 @@ function layoutFlowchart(flatNodes, flatEdges) {
 
     // Also below the previous node in this column
     colBottom[n.depth] = colBottom[n.depth] || PAD_Y;
-    const y = Math.max(colBottom[n.depth], minY);
+
+    // Extra gap when exiting a forloop (parent is a forloop diamond)
+    const exitsForloop = (nodeParents[n.id] || []).some((pid) => {
+      const pn = nodeMap[pid];
+      return pn && pn.type === 'forloop';
+    });
+    const effectiveColBottom = exitsForloop ? colBottom[n.depth] + ROW_GAP : colBottom[n.depth];
+
+    const y = Math.max(effectiveColBottom, minY);
 
     const colCenter = PAD_X + n.depth * COL_GAP + COL_REF_W / 2;
     const x = colCenter - dims.w / 2;
@@ -108,7 +116,9 @@ function layoutFlowchart(flatNodes, flatEdges) {
     if (!fromPos || !toPos) return;
 
     const fromNode = nodeMap[e.from];
-    const isFromDiamond = fromNode && (fromNode.type === 'decision' || fromNode.type === 'loop');
+    const toNode = nodeMap[e.to];
+    const isFromDiamond = fromNode && (fromNode.type === 'decision' || fromNode.type === 'loop' || fromNode.type === 'forloop');
+    const isToDiamond = toNode && (toNode.type === 'decision' || toNode.type === 'loop' || toNode.type === 'forloop');
 
     let x1, y1, sideExit = false;
     if (isFromDiamond) {
@@ -116,7 +126,11 @@ function layoutFlowchart(flatNodes, flatEdges) {
       const fromCY = fromPos.y + fromPos.h / 2;
       const toCX = toPos.x + toPos.w / 2;
 
-      if (toCX < fromCX - 5) {
+      if (e.exitRight) {
+        x1 = fromPos.x + fromPos.w;
+        y1 = fromCY;
+        sideExit = true;
+      } else if (toCX < fromCX - 5) {
         x1 = fromPos.x;
         y1 = fromCY;
         sideExit = true;
@@ -133,15 +147,26 @@ function layoutFlowchart(flatNodes, flatEdges) {
       y1 = fromPos.y + fromPos.h;
     }
 
+    let x2 = toPos.x + toPos.w / 2;
+    let y2 = toPos.y;
+    let sideEnter = false;
+
+    if (e.loopBack && isToDiamond) {
+      x2 = toPos.x;
+      y2 = toPos.y + toPos.h / 2;
+      sideEnter = true;
+    }
+
     renderedEdges.push({
       from: e.from,
       to: e.to,
       label: e.label || '',
       x1,
       y1,
-      x2: toPos.x + toPos.w / 2,
-      y2: toPos.y,
+      x2,
+      y2,
       sideExit,
+      sideEnter,
     });
   });
 
@@ -189,7 +214,7 @@ export default function Flowchart() {
     const cx = x + w / 2;
     const cy = y + h / 2;
 
-    if (node.type === 'decision' || node.type === 'loop') {
+    if (node.type === 'decision' || node.type === 'loop' || node.type === 'forloop') {
       const points = `${cx},${y} ${x + w},${cy} ${cx},${y + h} ${x},${cy}`;
       const cls = 'fc-diamond fc-decision-shape';
       return (
@@ -247,27 +272,42 @@ export default function Flowchart() {
       const midY = (e.y1 + e.y2) / 2;
 
       let path = '';
-      if (e.sideExit) {
-        path = `M ${e.x1} ${e.y1} L ${e.x2} ${e.y1} L ${e.x2} ${e.y2}`;
+      if (e.sideEnter) {
+        path = `M ${e.x1} ${e.y1} L ${e.x1} ${e.y2} L ${e.x2} ${e.y2}`;
+      } else if (e.sideExit) {
+        if (e.x2 < e.x1) {
+          const rightX = e.x1 + 40;
+          const turnY = e.y2 - 15;
+          path = `M ${e.x1} ${e.y1} L ${rightX} ${e.y1} L ${rightX} ${turnY} L ${e.x2} ${turnY} L ${e.x2} ${e.y2}`;
+        } else {
+          path = `M ${e.x1} ${e.y1} L ${e.x2} ${e.y1} L ${e.x2} ${e.y2}`;
+        }
       } else if (Math.abs(e.x1 - e.x2) < 5) {
         path = `M ${e.x1} ${e.y1} L ${e.x2} ${e.y2}`;
       } else {
         path = `M ${e.x1} ${e.y1} L ${e.x1} ${midY} L ${e.x2} ${midY} L ${e.x2} ${e.y2}`;
       }
 
+      const arrowPoints = e.sideEnter
+        ? `${e.x2},${e.y2} ${e.x2 + 8},${e.y2 - 5} ${e.x2 + 8},${e.y2 + 5}`
+        : `${e.x2},${e.y2} ${e.x2 - 5},${e.y2 - 8} ${e.x2 + 5},${e.y2 - 8}`;
+
       return (
         <g key={idx}>
           <path d={path} className="fc-edge" />
-          <polygon
-            points={`${e.x2},${e.y2} ${e.x2 - 5},${e.y2 - 8} ${e.x2 + 5},${e.y2 - 8}`}
-            className="fc-arrowhead"
-          />
+          <polygon points={arrowPoints} className="fc-arrowhead" />
           {e.label && (
             <text
-              x={e.sideExit ? (e.x1 + e.x2) / 2 : Math.abs(e.x1 - e.x2) < 5 ? e.x1 - 14 : e.x1 + (e.x2 - e.x1) * 0.6}
-              y={e.sideExit ? e.y1 - 6 : Math.abs(e.x1 - e.x2) < 5 ? midY + 2 : midY - 6}
+              x={e.sideEnter ? e.x1 + (e.x2 - e.x1) * 0.4
+                : e.sideExit ? (e.x1 + e.x2) / 2
+                : Math.abs(e.x1 - e.x2) < 5 ? e.x1 - 14
+                : e.x1 + (e.x2 - e.x1) * 0.6}
+              y={e.sideEnter ? midY - 6
+                : e.sideExit ? e.y1 - 6
+                : Math.abs(e.x1 - e.x2) < 5 ? midY + 2
+                : midY - 6}
               className="fc-edge-label"
-              textAnchor={Math.abs(e.x1 - e.x2) < 5 && !e.sideExit ? 'end' : 'middle'}
+              textAnchor={Math.abs(e.x1 - e.x2) < 5 && !e.sideExit && !e.sideEnter ? 'end' : 'middle'}
             >
               {e.label}
             </text>
