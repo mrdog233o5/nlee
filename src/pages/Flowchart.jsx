@@ -293,7 +293,7 @@ export default function Flowchart() {
       }
 
       const arrowPoints = e.sideEnter
-        ? `${e.x2},${e.y2} ${e.x2 + 8},${e.y2 - 5} ${e.x2 + 8},${e.y2 + 5}`
+        ? `${e.x2},${e.y2} ${e.x2 - 8},${e.y2 - 5} ${e.x2 - 8},${e.y2 + 5}`
         : `${e.x2},${e.y2} ${e.x2 - 5},${e.y2 - 8} ${e.x2 + 5},${e.y2 - 8}`;
 
       return (
