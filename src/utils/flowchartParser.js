@@ -3,6 +3,10 @@
  * Parses Java code into a flowchart tree structure.
  */
 
+function simplifyText(text) {
+  return text.replace(/^System\.out\.print(?:ln)?\s*\(.*/, 'output');
+}
+
 function classifyLine(line) {
   if (/^if\s*\(/.test(line)) return 'if';
   if (/^else\s+if\s*\(/.test(line)) return 'elseif';
@@ -108,7 +112,7 @@ function buildTree(lines) {
           lastDecision.falseBranch = [node];
           stack.push({ nodes: node.trueBranch, type: 'if-body', parentNode: node });
         } else {
-          ctx.nodes.push({ type: 'process', text: line });
+          ctx.nodes.push({ type: 'process', text: simplifyText(line) });
         }
         break;
       }
@@ -135,7 +139,7 @@ function buildTree(lines) {
             parentNode: lastDecision,
           });
         } else {
-          ctx.nodes.push({ type: 'process', text: line });
+          ctx.nodes.push({ type: 'process', text: simplifyText(line) });
         }
         break;
       }
@@ -177,7 +181,7 @@ function buildTree(lines) {
       }
 
       default:
-        ctx.nodes.push({ type: 'process', text: line });
+        ctx.nodes.push({ type: 'process', text: simplifyText(line) });
         break;
     }
   }
