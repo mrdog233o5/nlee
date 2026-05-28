@@ -165,6 +165,107 @@ function buildTree(lines) {
   return root;
 }
 
+function isBraced(lines, i) {
+  return lines[i].endsWith('{') || (i + 1 < lines.length && lines[i + 1] === '{');
+}
+
+function copyBracedBlock(lines, i, result) {
+  let depth = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    result.push(line);
+    if (line.endsWith('{') || line === '{') depth++;
+    if (line === '}') {
+      depth--;
+      if (depth === 0) return i + 1;
+    }
+    i++;
+  }
+  return i;
+}
+
+// Copy exactly one statement starting at lines[i], recursively expanding
+// braceless inner constructs. Returns the index after the statement.
+function copyStatement(lines, i, result) {
+  if (i >= lines.length) return i;
+
+  const line = lines[i];
+  const kind = classifyLine(line);
+
+  if (kind === 'if') {
+    if (isBraced(lines, i)) return copyBracedBlock(lines, i, result);
+    result.push(line);
+    result.push('{');
+    i = copyStatement(lines, i + 1, result);
+    result.push('}');
+    while (i < lines.length && classifyLine(lines[i]) === 'elseif') {
+      const elIfLine = lines[i];
+      result.push(elIfLine);
+      result.push('{');
+      i = copyStatement(lines, i + 1, result);
+      result.push('}');
+    }
+    if (i < lines.length && classifyLine(lines[i]) === 'else') {
+      result.push(lines[i]);
+      result.push('{');
+      i = copyStatement(lines, i + 1, result);
+      result.push('}');
+    }
+    return i;
+  }
+
+  if (kind === 'for' || kind === 'while') {
+    if (isBraced(lines, i)) return copyBracedBlock(lines, i, result);
+    result.push(line);
+    result.push('{');
+    i = copyStatement(lines, i + 1, result);
+    result.push('}');
+    return i;
+  }
+
+  if (kind === 'do') {
+    if (isBraced(lines, i)) return copyBracedBlock(lines, i, result);
+    result.push(line);
+    result.push('{');
+    i = copyStatement(lines, i + 1, result);
+    result.push('}');
+    if (i < lines.length && /^while\s*\(/.test(lines[i])) {
+      result.push(lines[i]);
+      i++;
+    }
+    return i;
+  }
+
+  result.push(line);
+  return i + 1;
+}
+
+// Inject virtual { } around braceless control-flow bodies so the
+// existing buildTree can process them without changes.
+function expandBraceless(lines) {
+  const result = [];
+  for (let i = 0; i < lines.length; ) {
+    const line = lines[i];
+    const kind = classifyLine(line);
+
+    if ((kind === 'if' || kind === 'elseif' || kind === 'else' ||
+         kind === 'for' || kind === 'while' || kind === 'do') && !isBraced(lines, i)) {
+      result.push(line);
+      result.push('{');
+      i = copyStatement(lines, i + 1, result);
+      result.push('}');
+      if (kind === 'do' && i < lines.length && /^while\s*\(/.test(lines[i])) {
+        result.push(lines[i]);
+        i++;
+      }
+    } else {
+      result.push(line);
+      i++;
+    }
+  }
+  return result;
+}
+
 function splitCompoundLine(line) {
   const result = [];
   let remaining = line;
@@ -211,7 +312,8 @@ function cleanLines(code) {
 export function parseJavaCode(code) {
   const lines = cleanLines(code);
   if (lines.length === 0) return [];
-  return buildTree(lines);
+  const expanded = expandBraceless(lines);
+  return buildTree(expanded);
 }
 
 export function flattenTree(tree) {
