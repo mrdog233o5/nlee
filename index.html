@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Flowchart Generator</title>
+    <script>
+      // GitHub Pages SPA redirect: restore the route after 404 fallback
+      (function() {
+        var redirect = sessionStorage.getItem('gh-pages-redirect');
+        if (redirect) {
+          sessionStorage.removeItem('gh-pages-redirect');
+          var base = '/nlee/';
+          var path = base + redirect;
+          // Replace the URL so React Router sees the intended route
+          window.history.replaceState(null, null, path);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
