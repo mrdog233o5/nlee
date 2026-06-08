@@ -157,7 +157,7 @@ function buildTree(lines) {
         const condition = extractCondition(line, 'while');
         const node = {
           type: 'loop',
-          condition: 'while (' + condition + ')',
+          condition: condition,
           body: [],
         };
         ctx.nodes.push(node);
@@ -464,10 +464,6 @@ export function flattenTree(tree) {
         prev = loopId;
         prevForloopExit = true;
       } else if (item.type === 'loop') {
-        if (item.update) {
-          item.body.push({ type: 'process', text: item.update });
-        }
-
         const loopId = nextId();
         nodes.push({ id: loopId, type: 'loop', text: item.condition, depth });
         connectPrev(loopId);
@@ -481,12 +477,8 @@ export function flattenTree(tree) {
         const loopEnd = bodyResult.last || loopId;
         edges.push({ from: loopEnd, to: loopId, label: '', loopBack: true });
 
-        const exitId = nextId();
-        nodes.push({ id: exitId, type: 'merge', text: '', depth: depth + 1 });
-        edges.push({ from: loopId, to: exitId, label: 'F', exitRight: true });
-
-        prev = exitId;
-        prevForloopExit = false;
+        prev = loopId;
+        prevForloopExit = true;
       }
     }
 

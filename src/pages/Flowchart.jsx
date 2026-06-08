@@ -82,9 +82,11 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
 
   // Parent lookup for y-constraints
   const nodeParents = {};
+  const exitRightTargets = new Set();
   flatEdges.forEach((e) => {
     if (!nodeParents[e.to]) nodeParents[e.to] = [];
     nodeParents[e.to].push(e.from);
+    if (e.exitRight) exitRightTargets.add(e.to);
   });
 
   const positions = {};
@@ -104,14 +106,17 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
     // Also below the previous node in this column
     colBottom[n.depth] = colBottom[n.depth] || PAD_Y;
 
-    // Extra gap when exiting a forloop (parent is a forloop diamond)
+    // Extra gap when exiting a for/while loop (parent is a loop diamond)
     const exitsForloop = (nodeParents[n.id] || []).some((pid) => {
       const pn = nodeMap[pid];
-      return pn && pn.type === 'forloop';
+      return pn && (pn.type === 'forloop' || pn.type === 'loop');
     });
     const effectiveColBottom = exitsForloop ? colBottom[n.depth] + ROW_GAP : colBottom[n.depth];
 
-    const y = Math.max(effectiveColBottom, minY);
+    // Extra gap when a horizontal wrap-around arrow targets this node
+    const exitArrowGap = exitRightTargets.has(n.id) ? 8 : 0;
+
+    const y = Math.max(effectiveColBottom, minY) + exitArrowGap;
 
     const colCenter = PAD_X + n.depth * COL_GAP + COL_REF_W / 2;
     const x = colCenter - dims.w / 2;
@@ -186,7 +191,9 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
     if (sideExit && e.exitRight && fromNode) {
       const fromRight = fromPos.x + fromPos.w;
       const colMaxR = colMaxRight[fromNode.depth] || fromRight;
-      rightX = Math.max(fromRight + 80, colMaxR + 20);
+      // Loop (while/for) exit arrows go wider to avoid overlapping inner exits
+      const loopOffset = (fromNode.type === 'loop' || fromNode.type === 'forloop') ? 30 : 0;
+      rightX = Math.max(fromRight + 80, colMaxR + 20) + loopOffset;
     }
 
     renderedEdges.push({
@@ -395,7 +402,7 @@ export default function Flowchart() {
       } else if (e.sideExit) {
         if (e.x2 < e.x1) {
           const rightX = e.rightX || (e.x1 + 80);
-          const turnY = e.y2 - 15;
+          const turnY = e.y2 - 12;
           path = `M ${e.x1} ${e.y1} L ${rightX} ${e.y1} L ${rightX} ${turnY} L ${e.x2} ${turnY} L ${e.x2} ${e.y2}`;
         } else {
           path = `M ${e.x1} ${e.y1} L ${e.x2} ${e.y1} L ${e.x2} ${e.y2}`;
