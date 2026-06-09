@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Redirecting...</title>
+  <script>
+    // Store the intended path and redirect to the SPA root
+    var path = window.location.pathname;
+    var base = '/nlee/';
+    // Extract the route after the base path
+    var route = path.replace(base, '');
+    sessionStorage.setItem('gh-pages-redirect', route);
+    window.location.replace(base);
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>
