@@ -379,7 +379,7 @@ export function flattenTree(tree) {
         });
         prevForloopExit = false;
       } else if (prevForloopExit) {
-        edges.push({ from: prev, to: id, label: 'F', exitRight: true });
+        edges.push({ from: prev, to: id, label: 'false', exitRight: true });
         prevForloopExit = false;
       } else {
         edges.push({ from: prev, to: id, label: '' });
@@ -390,7 +390,7 @@ export function flattenTree(tree) {
     function collectExits(p, pf) {
       if (!p) return [];
       if (typeof p === 'string') {
-        if (pf) return [{ exitId: p, label: 'F', exitRight: true }];
+        if (pf) return [{ exitId: p, label: 'false', exitRight: true }];
         return [{ exitId: p, label: '' }];
       }
       // multi
@@ -413,14 +413,14 @@ export function flattenTree(tree) {
 
         const trueResult = processBlock(item.trueBranch, depth);
         if (trueResult.first) {
-          edges.push({ from: decId, to: trueResult.first, label: 'T' });
+          edges.push({ from: decId, to: trueResult.first, label: 'true' });
         }
 
         let falseResult = null;
         if (item.falseBranch && item.falseBranch.length > 0) {
           falseResult = processBlock(item.falseBranch, depth + 1);
           if (falseResult.first) {
-            edges.push({ from: decId, to: falseResult.first, label: 'F' });
+            edges.push({ from: decId, to: falseResult.first, label: 'false' });
           }
         }
 
@@ -433,7 +433,7 @@ export function flattenTree(tree) {
           exits.push(...collectExits(falseResult.prev, falseResult.pfExit));
         } else if (!item.falseBranch || item.falseBranch.length === 0) {
           // No false branch → the decision itself carries the F exit
-          exits.push({ exitId: decId, label: 'F', exitRight: true });
+          exits.push({ exitId: decId, label: 'false', exitRight: true });
         }
 
         if (exits.length === 1) {
@@ -455,7 +455,7 @@ export function flattenTree(tree) {
 
         const bodyResult = processBlock(item.body, depth);
         if (bodyResult.first) {
-          edges.push({ from: loopId, to: bodyResult.first, label: 'T' });
+          edges.push({ from: loopId, to: bodyResult.first, label: 'true' });
         }
 
         const loopEnd = bodyResult.last || loopId;
@@ -471,7 +471,7 @@ export function flattenTree(tree) {
 
         const bodyResult = processBlock(item.body, depth);
         if (bodyResult.first) {
-          edges.push({ from: loopId, to: bodyResult.first, label: 'T' });
+          edges.push({ from: loopId, to: bodyResult.first, label: 'true' });
         }
 
         const loopEnd = bodyResult.last || loopId;
@@ -501,7 +501,7 @@ export function flattenTree(tree) {
       if (result.prev && typeof result.prev !== 'string' && result.prev.type === 'multi') {
         exits.push(...result.prev.exits);
       } else if (result.prev && typeof result.prev === 'string') {
-        const label = result.pfExit ? 'F' : '';
+        const label = result.pfExit ? 'false' : '';
         const exitRight = result.pfExit || false;
         exits.push({ exitId: result.prev, label, exitRight });
       } else {

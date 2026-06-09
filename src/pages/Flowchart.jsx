@@ -170,7 +170,9 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
         y1 = fromPos.y + fromPos.h;
       }
     } else if (e.loopBack) {
-      x1 = fromPos.x;
+      const fromNode = nodeMap[e.from];
+      const isPar = fromNode && (fromNode.type === 'input' || fromNode.type === 'output');
+      x1 = fromPos.x + (isPar ? 6 : 0);
       y1 = fromPos.y + fromPos.h / 2;
     } else {
       x1 = fromPos.x + fromPos.w / 2;
