@@ -424,8 +424,10 @@ function extractDoCondition(expr) {
 /**
  * Simulate execution by walking the flowchart AST tree and
  * recording variable/condition changes at each step.
+ * @param {object[]} tree - AST from parseJavaCode
+ * @param {Set<string>} [inputVars] - variable names to group under "input"
  */
-function simulateTree(tree) {
+function simulateTree(tree, inputVars) {
   const scope = new VariableScope();
   const steps = [];
   let output = '';
@@ -594,7 +596,8 @@ function simulateTree(tree) {
 
   const columns = [];
   for (const name of scope.getOrderedNames()) {
-    columns.push({ name, group: 'processing' });
+    const group = (inputVars && inputVars.has(name)) ? 'input' : 'processing';
+    columns.push({ name, group });
   }
   for (const expr of scope.getConditionNames()) {
     columns.push({ name: expr, group: 'processing', isCondition: true });
@@ -604,6 +607,48 @@ function simulateTree(tree) {
   }
 
   return { columns, steps, output, error: null };
+}
+
+// ═══════════════════════════════════════════
+// Layer 6: Input Section Detection
+// ═══════════════════════════════════════════
+
+/**
+ * Scan raw Java code for an Input section delimited by comment markers:
+ *   // Input  (or // Inputs)
+ *     ... variable declarations ...
+ *   // Processing section  (or // Processings section)
+ *
+ * Returns a Set of variable names declared in that section.
+ */
+function findInputSectionVars(code) {
+  const inputVars = new Set();
+  let inInputSection = false;
+
+  const lines = code.split('\n');
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+
+    if (/^\/\/\s*Inputs?\s*$/i.test(trimmed)) {
+      inInputSection = true;
+      continue;
+    }
+    if (/^\/\/\s*Processings?\s+section\s*$/i.test(trimmed)) {
+      inInputSection = false;
+      continue;
+    }
+
+    if (!inInputSection) continue;
+
+    // Strip inline comments from potential declaration line
+    const codePart = trimmed.replace(/\/\/.*$/, '').trim();
+    const declMatch = codePart.match(
+      /^(int|double|float|long|short|byte|boolean|char|String)\s+(\w+)\s*(=|$)/
+    );
+    if (declMatch) inputVars.add(declMatch[2]);
+  }
+
+  return inputVars;
 }
 
 // ═══════════════════════════════════════════
@@ -621,7 +666,8 @@ export function simulateJavaCode(code) {
     if (!tree || tree.length === 0) {
       return { columns: [], steps: [], output: '', error: 'No code to simulate' };
     }
-    return simulateTree(tree);
+    const inputVars = findInputSectionVars(code);
+    return simulateTree(tree, inputVars);
   } catch (e) {
     return { columns: [], steps: [], output: '', error: `Parse error: ${e.message}` };
   }
