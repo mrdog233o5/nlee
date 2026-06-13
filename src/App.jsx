@@ -3,6 +3,8 @@ import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
 import Flowchart from './pages/Flowchart'
 import TraceTable from './pages/TraceTable'
 import TruthTable from './pages/TruthTable'
+import CodeMirror from '@uiw/react-codemirror'
+import { java } from '@codemirror/lang-java'
 
 const SAMPLE_CODE = `public class Example {
   public static void main(String[] args) {
@@ -72,11 +74,24 @@ export default function App() {
       </nav>
       <div className="split-pane">
         <div className="split-left" style={{ width: `${splitPos}%` }}>
-          <textarea
-            className="fc-textarea code-editor"
+          <CodeMirror
+            className="code-editor"
             value={code}
-            onChange={(e) => setCode(e.target.value)}
-            spellCheck={false}
+            onChange={(val) => setCode(val)}
+            extensions={[java()]}
+            basicSetup={{
+              lineNumbers: true,
+              foldGutter: false,
+              highlightActiveLine: false,
+              bracketMatching: true,
+              closeBrackets: true,
+              autocompletion: false,
+              highlightActiveLineGutter: false,
+              indentOnInput: true,
+              tabSize: 4,
+            }}
+            theme="light"
+            height="100%"
           />
         </div>
         <div className="split-divider" ref={dividerRef} onMouseDown={handleDividerDown} />

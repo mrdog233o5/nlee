@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { simulateJavaCode } from '../utils/traceTableSimulator';
 
 export default function TraceTable({ code }) {

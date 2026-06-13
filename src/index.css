@@ -70,18 +70,74 @@ body {
   background: #fff;
 }
 
+/* ---- Code Editor (CodeMirror wrapper) ---- */
+
 .code-editor {
   flex: 1 !important;
-  padding: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.code-editor .cm-editor {
+  height: 100%;
   font-family: 'Roboto Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 0.85em !important;
+  font-size: 0.85em;
   line-height: 1.67;
-  border: none !important;
-  background: transparent !important;
-  color: rgba(0, 0, 0, 0.8);
+}
+
+.code-editor .cm-editor.cm-focused {
   outline: none;
-  resize: none !important;
-  tab-size: 4;
+}
+
+.code-editor .cm-scroller {
+  overflow: auto;
+  font-family: inherit;
+  line-height: inherit;
+}
+
+.code-editor .cm-content {
+  padding: 16px;
+  caret-color: rgba(0, 0, 0, 0.8);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.code-editor .cm-content .cm-line {
+  padding: 0;
+}
+
+.code-editor .cm-cursor {
+  border-left-color: rgba(0, 0, 0, 0.8);
+}
+
+.code-editor .cm-selectionBackground,
+.code-editor.cm-focused .cm-selectionBackground {
+  background: #d4d4d4 !important;
+}
+
+.code-editor .cm-activeLine {
+  background: transparent;
+}
+
+.code-editor .cm-gutters {
+  background: #f8f9fa;
+  border-right: 1px solid #e9ecef;
+  min-width: 48px;
+}
+
+.code-editor .cm-lineNumbers {
+  width: 100%;
+}
+
+.code-editor .cm-lineNumbers .cm-gutterElement {
+  text-align: center;
+  padding: 0 4px;
+}
+
+.code-editor .cm-matchingBracket {
+  background: #e0e0e0;
+  outline: 1px solid #999;
 }
 
 .split-divider {
