@@ -165,7 +165,7 @@ function getEdgeBaseWaypoints(e) {
   const midY = (e.y1 + e.y2) / 2;
 
   if (e.sideEnter) {
-    const leftOff = Math.max(8, e.x1 - 60);
+    const leftOff = Math.max(8, e.x1 - 36);
     return [
       { x: e.x1, y: e.y1 },
       { x: leftOff, y: e.y1 },
@@ -176,7 +176,7 @@ function getEdgeBaseWaypoints(e) {
 
   if (e.sideExit) {
     if (e.x2 < e.x1) {
-      const rightX = e.rightX || (e.x1 + 80);
+      const rightX = e.rightX || (e.x1 + 40);
       const turnY = e.y2 - 12;
       return [
         { x: e.x1, y: e.y1 },
@@ -433,8 +433,8 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
     let rightX = null;
     if (sideExit && e.exitRight && fromNode) {
       const fromRight = fromPos.x + fromPos.w;
-      const loopOffset = (fromNode.type === 'loop' || fromNode.type === 'forloop') ? 60 : 0;
-      rightX = Math.max(fromRight + 100, globalMaxR + 80) + loopOffset;
+      const loopOffset = (fromNode.type === 'loop' || fromNode.type === 'forloop') ? 30 : 0;
+      rightX = Math.max(fromRight + 40, globalMaxR + 30) + loopOffset;
     }
 
     renderedEdges.push({
@@ -646,7 +646,7 @@ export default function Flowchart({ code }) {
         path = `M ${e.x1} ${e.y1} L ${leftOff} ${e.y1} L ${leftOff} ${e.y2} L ${e.x2} ${e.y2}`;
       } else if (e.sideExit) {
         if (e.x2 < e.x1) {
-          const rightX = e.rightX || (e.x1 + 80);
+          const rightX = e.rightX || (e.x1 + 40);
           const turnY = e.y2 - 12;
           path = `M ${e.x1} ${e.y1} L ${rightX} ${e.y1} L ${rightX} ${turnY} L ${e.x2} ${turnY} L ${e.x2} ${e.y2}`;
         } else {
