@@ -5,12 +5,14 @@ const DECISION_H = 42;
 const MERGE_SIZE = 10;
 const START_END_W = 80;
 const COL_GAP = 160;
-const ROW_GAP = 16;
+const ROW_GAP = 24;
 const PAD_X = 24;
 const PAD_Y = 16;
 const COL_REF_W = 140;
 const MIN_W = 60;
 const NODE_MIN_H = 32;
+const OBSTACLE_PAD = 4;
+const AVOID_GAP = 6;
 
 function wordWrap(text, maxChars) {
   const lines = [];
@@ -39,28 +41,276 @@ function computeNodeDims(node, flipped) {
   const text = node.text || '';
   const charW = 7;
   const lineH = 15;
-  const flipExtra = flipped ? 2 : 0;
-  const padX = (node.type === 'start' || node.type === 'end') ? 20 : 12 + flipExtra;
-  const padY = 8;
-  const maxChars = (node.type === 'decision' || node.type === 'loop' || node.type === 'forloop') ? 14 : 17;
 
+  // Start / End pill shapes — unchanged
+  if (node.type === 'start' || node.type === 'end') {
+    const maxChars = 17;
+    const padX = 20;
+    const padY = 8;
+    const wrapped = wordWrap(text, maxChars);
+    const totalLines = wrapped.length || 1;
+    const maxLinePx = Math.ceil(wrapped.reduce((m, l) => Math.max(m, l.length * charW), 0));
+    return {
+      w: Math.max(START_END_W, Math.ceil(maxLinePx + padX)),
+      h: Math.max(NODE_MIN_H, Math.ceil(totalLines * lineH + padY)),
+    };
+  }
+
+  // Diamond shapes (decision / loop / forloop)
+  // Uses geometric sizing: ensures centered foreignObject fits within diamond's visible area
+  if (node.type === 'decision' || node.type === 'loop' || node.type === 'forloop') {
+    const maxChars = 12;
+    const DIAMOND_PAD_X = 22;   // horizontal gap from text edge to diamond bounding box edge
+    const DIAMOND_PAD_Y = 30;   // minimum vertical gap from text to diamond tip
+
+    const wrapped = wordWrap(text, maxChars);
+    const totalLines = wrapped.length || 1;
+    const maxLinePx = Math.ceil(wrapped.reduce((m, l) => Math.max(m, l.length * charW), 0));
+    const textW = maxLinePx;
+    const textH = totalLines * lineH;
+
+    let h = Math.max(DECISION_H, Math.ceil(textH + 2 * DIAMOND_PAD_Y));
+    let w = Math.max(120, Math.ceil(textW + 2 * DIAMOND_PAD_X));
+
+    // Geometry constraint: FO width must fit within diamond at FO's vertical position.
+    // For a centered rectangle of height textH in a diamond of height h:
+    //   FO top is at (h - textH)/2 from diamond top
+    //   Diamond visible width at FO top = w * (h - textH) / h
+    //   Need: w - 2*DIAMOND_PAD_X ≤ w * (h - textH) / h
+    //   →  w ≤ 2*DIAMOND_PAD_X * h / textH
+    if (textH > 0) {
+      const maxW = Math.ceil(2 * DIAMOND_PAD_X * h / textH);
+      if (w > maxW) {
+        h = Math.ceil(w * textH / (2 * DIAMOND_PAD_X));
+      }
+    }
+
+    return { w, h };
+  }
+
+  // Input / Output (parallelogram) — needs wider pad so FO stays inside slanted edges
+  if (node.type === 'input' || node.type === 'output') {
+    if (flipped) {
+      // Flipped to rectangle — standard sizing
+      const padX = 14;
+      const padY = 8;
+      const maxChars = 17;
+      const wrapped = wordWrap(text, maxChars);
+      const totalLines = wrapped.length || 1;
+      const maxLinePx = Math.ceil(wrapped.reduce((m, l) => Math.max(m, l.length * charW), 0));
+      return {
+        w: Math.max(MIN_W, Math.ceil(maxLinePx + padX)),
+        h: Math.max(NODE_MIN_H, Math.ceil(totalLines * lineH + padY)),
+      };
+    }
+    // Non-flipped parallelogram: FO must be at x+12 / width w-24 to stay inside 12px slant
+    const padX = 24;
+    const padY = 8;
+    const maxChars = 17;
+    const wrapped = wordWrap(text, maxChars);
+    const totalLines = wrapped.length || 1;
+    const maxLinePx = Math.ceil(wrapped.reduce((m, l) => Math.max(m, l.length * charW), 0));
+    return {
+      w: Math.max(MIN_W, Math.ceil(maxLinePx + padX)),
+      h: Math.max(NODE_MIN_H, Math.ceil(totalLines * lineH + padY)),
+    };
+  }
+
+  // Process nodes (and others) — standard rectangle, or flipped to parallelogram
+  const padX = flipped ? 24 : 12;  // flipped parallelogram needs x+12 / w-24
+  const padY = 8;
+  const maxChars = 17;
   const wrapped = wordWrap(text, maxChars);
   const totalLines = wrapped.length || 1;
   const maxLinePx = Math.ceil(wrapped.reduce((m, l) => Math.max(m, l.length * charW), 0));
-
-  let w, h;
-  if (node.type === 'start' || node.type === 'end') {
-    w = Math.max(START_END_W, Math.ceil(maxLinePx + padX));
-    h = Math.max(NODE_MIN_H, Math.ceil(totalLines * lineH + padY));
-  } else if (node.type === 'decision' || node.type === 'loop' || node.type === 'forloop') {
-    w = Math.max(120, Math.ceil(maxLinePx + padX));
-    h = Math.max(DECISION_H, Math.ceil(totalLines * lineH + padY));
-  } else {
-    w = Math.max(MIN_W, Math.ceil(maxLinePx + padX));
-    h = Math.max(NODE_MIN_H, Math.ceil(totalLines * lineH + padY));
-  }
-  return { w, h };
+  return {
+    w: Math.max(MIN_W, Math.ceil(maxLinePx + padX)),
+    h: Math.max(NODE_MIN_H, Math.ceil(totalLines * lineH + padY)),
+  };
 }
+
+// ── Obstacle avoidance utilities ────────────────────────────────────
+
+function buildObstacleBboxes(positions) {
+  const bboxes = {};
+  for (const [id, pos] of Object.entries(positions)) {
+    bboxes[id] = {
+      left: pos.x - OBSTACLE_PAD,
+      right: pos.x + pos.w + OBSTACLE_PAD,
+      top: pos.y - OBSTACLE_PAD,
+      bottom: pos.y + pos.h + OBSTACLE_PAD,
+    };
+  }
+  return bboxes;
+}
+
+function hSegHits(x1, x2, y, bbox) {
+  const xLo = Math.min(x1, x2);
+  const xHi = Math.max(x1, x2);
+  return y > bbox.top && y < bbox.bottom && xHi > bbox.left && xLo < bbox.right;
+}
+
+function vSegHits(x, y1, y2, bbox) {
+  const yLo = Math.min(y1, y2);
+  const yHi = Math.max(y1, y2);
+  return x > bbox.left && x < bbox.right && yHi > bbox.top && yLo < bbox.bottom;
+}
+
+function waypointsToPath(waypoints) {
+  if (!waypoints || waypoints.length === 0) return '';
+  return 'M ' + waypoints.map((p) => p.x + ' ' + p.y).join(' L ');
+}
+
+function getEdgeBaseWaypoints(e) {
+  const midY = (e.y1 + e.y2) / 2;
+
+  if (e.sideEnter) {
+    const leftOff = Math.max(8, e.x1 - 60);
+    return [
+      { x: e.x1, y: e.y1 },
+      { x: leftOff, y: e.y1 },
+      { x: leftOff, y: e.y2 },
+      { x: e.x2, y: e.y2 },
+    ];
+  }
+
+  if (e.sideExit) {
+    if (e.x2 < e.x1) {
+      const rightX = e.rightX || (e.x1 + 80);
+      const turnY = e.y2 - 12;
+      return [
+        { x: e.x1, y: e.y1 },
+        { x: rightX, y: e.y1 },
+        { x: rightX, y: turnY },
+        { x: e.x2, y: turnY },
+        { x: e.x2, y: e.y2 },
+      ];
+    }
+    return [
+      { x: e.x1, y: e.y1 },
+      { x: e.x2, y: e.y1 },
+      { x: e.x2, y: e.y2 },
+    ];
+  }
+
+  if (Math.abs(e.x1 - e.x2) < 5) {
+    return [
+      { x: e.x1, y: e.y1 },
+      { x: e.x2, y: e.y2 },
+    ];
+  }
+
+  return [
+    { x: e.x1, y: e.y1 },
+    { x: e.x1, y: midY },
+    { x: e.x2, y: midY },
+    { x: e.x2, y: e.y2 },
+  ];
+}
+
+function avoidObstaclesOnEdge(edge, waypoints, bboxes) {
+  const exclude = new Set([edge.from, edge.to]);
+
+  function segClear(x1, y1, x2, y2) {
+    if (y1 === y2) {
+      for (const [id, bb] of Object.entries(bboxes)) {
+        if (exclude.has(id)) continue;
+        if (hSegHits(x1, x2, y1, bb)) return false;
+      }
+    } else if (x1 === x2) {
+      for (const [id, bb] of Object.entries(bboxes)) {
+        if (exclude.has(id)) continue;
+        if (vSegHits(x1, y1, y2, bb)) return false;
+      }
+    }
+    return true;
+  }
+
+  function tryJogH(a, b, jogY) {
+    if (!segClear(a.x, b.x, jogY, jogY)) return null;
+    if (!segClear(a.x, a.y, a.x, jogY)) return null;
+    if (!segClear(b.x, jogY, b.x, b.y)) return null;
+    return [{ x: a.x, y: jogY }, { x: b.x, y: jogY }, b];
+  }
+
+  function tryJogV(a, b, jogX) {
+    if (!segClear(jogX, a.y, jogX, b.y)) return null;
+    if (!segClear(a.x, a.y, jogX, a.y)) return null;
+    if (!segClear(jogX, b.y, b.x, b.y)) return null;
+    return [{ x: jogX, y: a.y }, { x: jogX, y: b.y }, b];
+  }
+
+  function firstHit(a, b) {
+    if (a.y === b.y) {
+      for (const [id, bb] of Object.entries(bboxes)) {
+        if (exclude.has(id)) continue;
+        if (hSegHits(a.x, b.x, a.y, bb)) return bb;
+      }
+    } else if (a.x === b.x) {
+      for (const [id, bb] of Object.entries(bboxes)) {
+        if (exclude.has(id)) continue;
+        if (vSegHits(a.x, a.y, b.y, bb)) return bb;
+      }
+    }
+    return null;
+  }
+
+  const result = [waypoints[0]];
+
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = result[result.length - 1];
+    const b = waypoints[i + 1];
+
+    if (a.x === b.x && a.y === b.y) continue;
+
+    // No obstacle → keep original segment
+    if (segClear(a.x, a.y, b.x, b.y)) {
+      result.push(b);
+      continue;
+    }
+
+    const hit = firstHit(a, b);
+    if (!hit) { result.push(b); continue; }
+
+    if (a.y === b.y) {
+      // Horizontal — try above then below
+      const above = tryJogH(a, b, Math.max(PAD_Y, hit.top - AVOID_GAP));
+      if (above) { result.push(...above); continue; }
+      const below = tryJogH(a, b, Math.max(PAD_Y, hit.bottom + AVOID_GAP));
+      if (below) { result.push(...below); continue; }
+    } else if (a.x === b.x) {
+      // Vertical — try left then right
+      const left = tryJogV(a, b, hit.left - AVOID_GAP);
+      if (left) { result.push(...left); continue; }
+      const right = tryJogV(a, b, hit.right + AVOID_GAP);
+      if (right) { result.push(...right); continue; }
+    }
+
+    // Fall back to original
+    result.push(b);
+  }
+
+  return result;
+}
+
+function addObstacleAvoidance(edges, positions) {
+  const bboxes = buildObstacleBboxes(positions);
+  for (const edge of edges) {
+    const base = getEdgeBaseWaypoints(edge);
+    const avoided = avoidObstaclesOnEdge(edge, base, bboxes);
+    if (avoided.length !== base.length) {
+      edge.waypoints = avoided;
+    } else {
+      let differs = false;
+      for (let i = 0; i < base.length; i++) {
+        if (avoided[i].x !== base[i].x || avoided[i].y !== base[i].y) { differs = true; break; }
+      }
+      if (differs) edge.waypoints = avoided;
+    }
+  }
+}
+
+// ── Layout engine ───────────────────────────────────────────────────
 
 function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
   const nodeMap = {};
@@ -124,6 +374,7 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
       colMaxRight[nd.depth] = r;
     }
   });
+  const globalMaxR = Object.values(colMaxRight).reduce((max, r) => Math.max(max, r), 0);
 
   // Compute edge endpoints
   const renderedEdges = [];
@@ -182,10 +433,8 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
     let rightX = null;
     if (sideExit && e.exitRight && fromNode) {
       const fromRight = fromPos.x + fromPos.w;
-      const colMaxR = colMaxRight[fromNode.depth] || fromRight;
-      // Loop (while/for) exit arrows go wider to avoid overlapping inner exits
-      const loopOffset = (fromNode.type === 'loop' || fromNode.type === 'forloop') ? 30 : 0;
-      rightX = Math.max(fromRight + 80, colMaxR + 20) + loopOffset;
+      const loopOffset = (fromNode.type === 'loop' || fromNode.type === 'forloop') ? 60 : 0;
+      rightX = Math.max(fromRight + 100, globalMaxR + 80) + loopOffset;
     }
 
     renderedEdges.push({
@@ -201,6 +450,8 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
       rightX,
     });
   });
+
+  addObstacleAvoidance(renderedEdges, positions);
 
   return { positions, edges: renderedEdges, nodeMap };
 }
@@ -284,10 +535,14 @@ export default function Flowchart({ code }) {
     if (node.type === 'decision' || node.type === 'loop' || node.type === 'forloop') {
       const points = `${cx},${y} ${x + w},${cy} ${cx},${y + h} ${x},${cy}`;
       const cls = 'fc-diamond fc-decision-shape';
+      // Center foreignObject within diamond so text sits in the widest region
+      const diamondTextWrapped = wordWrap(node.text || '', 12);
+      const diamondTextH = (diamondTextWrapped.length || 1) * 15;
+      const foY = y + (h - diamondTextH) / 2;
       return (
         <g key={node.id}>
           <polygon points={points} className={cls} />
-          <foreignObject x={x + 8} y={y + 6} width={w - 16} height={h - 12}>
+          <foreignObject x={x + 22} y={foY} width={w - 44} height={diamondTextH}>
             <div xmlns="http://www.w3.org/1999/xhtml" className="fc-node-text">
               {node.text}
             </div>
@@ -327,7 +582,7 @@ export default function Flowchart({ code }) {
       return (
         <g key={node.id} className="fc-clickable" onClick={() => toggleShape(node.id)}>
           <polygon points={points} className="fc-rect fc-process-shape" />
-          <foreignObject x={x + 6} y={y + 3} width={w - 10} height={h - 6}>
+          <foreignObject x={x + 12} y={y + 3} width={w - 24} height={h - 6}>
             <div xmlns="http://www.w3.org/1999/xhtml" className="fc-node-text">
               {node.text}
             </div>
@@ -343,7 +598,7 @@ export default function Flowchart({ code }) {
       return (
         <g key={node.id} className="fc-clickable" onClick={() => toggleShape(node.id)}>
           <polygon points={pts} className="fc-rect fc-process-shape" />
-          <foreignObject x={x + 6} y={y + 3} width={w - 10} height={h - 6}>
+          <foreignObject x={x + 12} y={y + 3} width={w - 24} height={h - 6}>
             <div xmlns="http://www.w3.org/1999/xhtml" className="fc-node-text">
               {node.text}
             </div>
@@ -384,7 +639,9 @@ export default function Flowchart({ code }) {
       const midY = (e.y1 + e.y2) / 2;
 
       let path = '';
-      if (e.sideEnter) {
+      if (e.waypoints) {
+        path = waypointsToPath(e.waypoints);
+      } else if (e.sideEnter) {
         const leftOff = Math.max(8, e.x1 - 60);
         path = `M ${e.x1} ${e.y1} L ${leftOff} ${e.y1} L ${leftOff} ${e.y2} L ${e.x2} ${e.y2}`;
       } else if (e.sideExit) {
