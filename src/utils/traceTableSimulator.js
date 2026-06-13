@@ -430,15 +430,65 @@ function simulateTree(tree) {
   const steps = [];
   let output = '';
   let pendingConditions = {};  // conditions evaluated between steps
+  let initializing = true;     // merge init steps into first row
 
-  function recordStep() {
+  /**
+   * Record a step in the trace table.
+   *
+   * Consolidation rules:
+   * 1. If a variable changed → create step with buffered conditions
+   * 2. If only conditions pending (no var change) → merge into previous step
+   * 3. If nothing changed and no conditions → skip (removes no-op rows)
+   * 4. During init phase, merge into first step instead of creating new ones
+   * 5. Consecutive var-change steps with no intervening conditions → merge
+   * 6. force → always create step (for output)
+   */
+  function recordStep(opts = {}) {
+    const { force = false } = opts;
     const snap = scope.getSnapshot();
     const conds = { ...pendingConditions };
     pendingConditions = {};
-    // Only create a step if something meaningful happened
-    if (Object.keys(snap).length > 0 || Object.keys(conds).length > 0) {
+
+    if (Object.keys(snap).length === 0 && Object.keys(conds).length === 0) return;
+
+    const lastStep = steps[steps.length - 1];
+    let varsChanged = true;
+    if (lastStep && !force) {
+      varsChanged = Object.keys(snap).some(k =>
+        String(snap[k]) !== String(lastStep.vars[k])
+      ) || Object.keys(snap).length !== Object.keys(lastStep.vars).length;
+    }
+
+    if (varsChanged) {
+      if (initializing && lastStep) {
+        // Init phase: merge declarations only — if an existing variable's value changed
+        // (e.g. numCopy /= 10), that's an active operation, not initialization.
+        const existingChanged = Object.keys(lastStep.vars).some(k =>
+          k in snap && String(snap[k]) !== String(lastStep.vars[k])
+        );
+        if (existingChanged) {
+          initializing = false;
+          steps.push({ vars: snap, conditions: conds });
+        } else {
+          // Still in init phase — merge into first step
+          lastStep.vars = snap;
+          lastStep.conditions = { ...lastStep.conditions, ...conds };
+        }
+      } else if (!force && lastStep
+                 && Object.keys(conds).length === 0
+                 && Object.keys(lastStep.conditions).length === 0) {
+        // Consecutive var-change step with no conditions → merge into last
+        lastStep.vars = snap;
+      } else {
+        steps.push({ vars: snap, conditions: conds });
+      }
+    } else if (Object.keys(conds).length > 0 && lastStep) {
+      // No var change, only conditions → merge into previous step
+      lastStep.conditions = { ...lastStep.conditions, ...conds };
+    } else if (force) {
       steps.push({ vars: snap, conditions: conds });
     }
+    // else: nothing changed at all → skip entirely
   }
 
   function evaluateAndRecordCondition(expr) {
@@ -455,6 +505,7 @@ function simulateTree(tree) {
         execStatement(node.text, scope);
         recordStep();
       } else if (node.type === 'output') {
+        initializing = false;
         const exprText = node.text.replace(/^output\s+/, '').trim();
         try {
           const result = evaluate(exprText, scope);
@@ -462,11 +513,12 @@ function simulateTree(tree) {
         } catch (e) {
           output += `<error: ${e.message}>`;
         }
-        recordStep();
+        recordStep({ force: true });
       } else if (node.type === 'decision') {
+        initializing = false;
         const condResult = evaluateAndRecordCondition(node.condition);
-        recordStep();
-
+        // Don't create separate step — condition stays in pending
+        // and merges into the next var-change step
         if (condResult) {
           if (node.trueBranch) walkBlock(node.trueBranch);
         } else {
@@ -475,17 +527,19 @@ function simulateTree(tree) {
           }
         }
       } else if (node.type === 'while' || (node.type === 'loop' && !node.condition?.startsWith('do {'))) {
+        initializing = false;
         // while loop
         const maxIter = 1000;
         let iter = 0;
         while (iter < maxIter) {
           const condResult = evaluateAndRecordCondition(node.condition);
-          recordStep();
+          // Condition stays in pendingConditions — merges into next process step
           if (!condResult) break;
           walkBlock(node.body);
           iter++;
         }
       } else if (node.type === 'forloop') {
+        initializing = false;
         // Execute init statement
         if (node.init) {
           execStatement(node.init, scope);
@@ -495,7 +549,7 @@ function simulateTree(tree) {
         let iter = 0;
         while (iter < maxIter) {
           const condResult = evaluateAndRecordCondition(node.condition);
-          recordStep();
+          // Condition stays in pendingConditions — merges into next process step
           if (!condResult) break;
           walkBlock(node.body);
           if (node.update) {
@@ -505,6 +559,7 @@ function simulateTree(tree) {
           iter++;
         }
       } else if (node.type === 'loop' && node.condition && node.condition.startsWith('do {')) {
+        initializing = false;
         const maxIter = 1000;
         let iter = 0;
         do {
@@ -512,16 +567,30 @@ function simulateTree(tree) {
           iter++;
           if (iter >= maxIter) break;
         } while (evaluateAndRecordCondition(extractDoCondition(node.condition)));
-        recordStep();
+        // Remaining condition merges into next output/process step
       }
     }
   }
-
   try {
     walkBlock(tree);
   } catch (e) {
     return { error: `Simulation error: ${e.message}`, columns: [], steps, output };
   }
+
+  // Flush any remaining pending conditions (e.g., loop exit condition)
+  if (Object.keys(pendingConditions).length > 0) {
+    const snap = scope.getSnapshot();
+    const lastStep = steps[steps.length - 1];
+    if (!lastStep || (Object.keys(snap).some(k =>
+      String(snap[k]) !== String(lastStep.vars[k])
+    ))) {
+      steps.push({ vars: snap, conditions: { ...pendingConditions } });
+    } else {
+      lastStep.conditions = { ...lastStep.conditions, ...pendingConditions };
+    }
+    pendingConditions = {};
+  }
+
 
   const columns = [];
   for (const name of scope.getOrderedNames()) {
