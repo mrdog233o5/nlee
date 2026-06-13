@@ -59,7 +59,45 @@ function parseForHeader(line) {
   return { init, condition, update };
 }
 
-function buildTree(lines) {
+/**
+ * Scan raw Java code for an Input section delimited by comment markers:
+ *   // Input  (or // Inputs)
+ *     ... variable declarations ...
+ *   // Processing section  (or // Processings section)
+ *
+ * Returns a Set of variable names declared in that section.
+ */
+export function findInputSectionVars(code) {
+  const inputVars = new Set();
+  let inInputSection = false;
+
+  const lines = code.split('\n');
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+
+    if (/^\/\/\s*Inputs?\s*$/i.test(trimmed)) {
+      inInputSection = true;
+      continue;
+    }
+    if (/^\/\/\s*Processings?\s+section\s*$/i.test(trimmed)) {
+      inInputSection = false;
+      continue;
+    }
+
+    if (!inInputSection) continue;
+
+    // Strip inline comments from potential declaration line
+    const codePart = trimmed.replace(/\/\/.*$/, '').trim();
+    const declMatch = codePart.match(
+      /^(int|double|float|long|short|byte|boolean|char|String)\s+(\w+)\s*(=|$)/
+    );
+    if (declMatch) inputVars.add(declMatch[2]);
+  }
+
+  return inputVars;
+}
+
+function buildTree(lines, inputVars) {
   const root = [];
   const stack = [{ nodes: root, type: 'root' }];
 
@@ -194,9 +232,19 @@ function buildTree(lines) {
         break;
       }
 
-      default:
-        ctx.nodes.push({ type: classifyIO(line), text: simplifyText(line) });
+      default: {
+        let nodeType = classifyIO(line);
+        if (nodeType === 'process' && inputVars && inputVars.size > 0) {
+          const declMatch = line.match(
+            /^(int|double|float|long|short|byte|boolean|char|String)\s+(\w+)/
+          );
+          if (declMatch && inputVars.has(declMatch[2])) {
+            nodeType = 'input';
+          }
+        }
+        ctx.nodes.push({ type: nodeType, text: simplifyText(line) });
         break;
+      }
     }
   }
 
@@ -350,8 +398,9 @@ function cleanLines(code) {
 export function parseJavaCode(code) {
   const lines = cleanLines(code);
   if (lines.length === 0) return [];
+  const inputVars = findInputSectionVars(code);
   const expanded = expandBraceless(lines);
-  return buildTree(expanded);
+  return buildTree(expanded, inputVars);
 }
 
 export function flattenTree(tree) {

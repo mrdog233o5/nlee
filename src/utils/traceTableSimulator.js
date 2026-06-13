@@ -1,6 +1,6 @@
 /** traceTableSimulator.js --- Java code simulator for trace table generation */
 
-import { parseJavaCode } from './flowchartParser.js';
+import { parseJavaCode, findInputSectionVars } from './flowchartParser.js';
 
 // ═══════════════════════════════════════════
 // Layer 1: Expression Tokenizer
@@ -607,48 +607,6 @@ function simulateTree(tree, inputVars) {
   }
 
   return { columns, steps, output, error: null };
-}
-
-// ═══════════════════════════════════════════
-// Layer 6: Input Section Detection
-// ═══════════════════════════════════════════
-
-/**
- * Scan raw Java code for an Input section delimited by comment markers:
- *   // Input  (or // Inputs)
- *     ... variable declarations ...
- *   // Processing section  (or // Processings section)
- *
- * Returns a Set of variable names declared in that section.
- */
-function findInputSectionVars(code) {
-  const inputVars = new Set();
-  let inInputSection = false;
-
-  const lines = code.split('\n');
-  for (const raw of lines) {
-    const trimmed = raw.trim();
-
-    if (/^\/\/\s*Inputs?\s*$/i.test(trimmed)) {
-      inInputSection = true;
-      continue;
-    }
-    if (/^\/\/\s*Processings?\s+section\s*$/i.test(trimmed)) {
-      inInputSection = false;
-      continue;
-    }
-
-    if (!inInputSection) continue;
-
-    // Strip inline comments from potential declaration line
-    const codePart = trimmed.replace(/\/\/.*$/, '').trim();
-    const declMatch = codePart.match(
-      /^(int|double|float|long|short|byte|boolean|char|String)\s+(\w+)\s*(=|$)/
-    );
-    if (declMatch) inputVars.add(declMatch[2]);
-  }
-
-  return inputVars;
 }
 
 // ═══════════════════════════════════════════
