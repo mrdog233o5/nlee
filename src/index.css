@@ -205,3 +205,98 @@ body {
   font-weight: 600;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+
+/* ---- Trace Table Styles ---- */
+
+.tt-wrapper {
+  margin-top: 24px;
+  overflow-x: auto;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  background: #fff;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.tt-table {
+  border-collapse: collapse;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.75rem;
+  min-width: 100%;
+  table-layout: auto;
+  white-space: nowrap;
+}
+
+.tt-table th,
+.tt-table td {
+  padding: 6px 12px;
+  border: 1px solid #e4e4e7;
+  text-align: left;
+}
+
+.tt-group-row th {
+  background: #f4f4f5;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #52525b;
+  padding: 4px 12px;
+  border-bottom: 2px solid #d4d4d8;
+}
+
+.tt-col-header {
+  background: #fafafa;
+  font-weight: 600;
+  color: #18181b;
+  font-size: 0.7rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tt-row-even {
+  background: #ffffff;
+}
+
+.tt-row-odd {
+  background: #fafafa;
+}
+
+.tt-cell {
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+}
+
+.tt-cell-empty {
+  color: #d4d4d8;
+}
+
+.tt-condition-true {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.tt-condition-false {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.tt-cell-code {
+  color: #6366f1;
+  font-style: italic;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tt-cell-output {
+  color: #18181b;
+  font-weight: 600;
+  background: #f0fdf4;
+}
+
+/* Hover highlight on rows */
+.tt-table tbody tr:hover {
+  background: #fef9c3 !important;
+}

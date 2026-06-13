@@ -41,18 +41,22 @@ function parseForHeader(line) {
   let inner = line.replace(/^for\s*\(\s*/, '');
   inner = inner.replace(/\s*\)\s*\{?\s*$/, '');
   const parts = inner.split(';');
+  let init = '';
   let condition = '';
   let update = '';
   if (parts.length >= 3) {
+    init = parts[0].trim();
     condition = parts[1].trim();
     update = parts.slice(2).join(';').trim();
   } else if (parts.length === 2) {
-    condition = parts[0].trim();
-    update = parts[1].trim();
+    init = parts[0].trim();
+    condition = parts[1].trim();
+    update = '';
   } else {
+    init = parts[0] ? parts[0].trim() : '';
     condition = parts[0] ? parts[0].trim() : '';
   }
-  return { condition, update };
+  return { init, condition, update };
 }
 
 function buildTree(lines) {
@@ -177,10 +181,11 @@ function buildTree(lines) {
       }
 
       case 'for': {
-        const { condition, update } = parseForHeader(line);
+        const { init, condition, update } = parseForHeader(line);
         const node = {
           type: 'forloop',
           condition: condition,
+          init: init || undefined,
           update: update || undefined,
           body: [],
         };
