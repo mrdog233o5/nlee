@@ -12,16 +12,6 @@ const COL_REF_W = 140;
 const MIN_W = 60;
 const NODE_MIN_H = 32;
 
-const SAMPLE_CODE = `public class Example {
-  public static void main(String[] args) {
-    int x = 5;
-    if (x > 3) {
-      System.out.println("Big");
-    }
-    System.out.println("Done");
-  }
-}`;
-
 function wordWrap(text, maxChars) {
   const lines = [];
   for (const para of text.split('\n')) {
@@ -215,9 +205,7 @@ function layoutFlowchart(flatNodes, flatEdges, flippedNodes) {
   return { positions, edges: renderedEdges, nodeMap };
 }
 
-export default function Flowchart() {
-  const [code, setCode] = useState(SAMPLE_CODE);
-  const [error, setError] = useState('');
+export default function Flowchart({ code }) {
   const [flippedNodes, setFlippedNodes] = useState({});
 
   const toggleShape = (nodeId) => {
@@ -258,13 +246,11 @@ export default function Flowchart() {
     URL.revokeObjectURL(url);
   };
 
-  const tree = useMemo(() => {
+  const { tree, error } = useMemo(() => {
     try {
-      setError('');
-      return parseJavaCode(code);
+      return { tree: parseJavaCode(code), error: '' };
     } catch (e) {
-      setError(e.message);
-      return [];
+      return { tree: [], error: e.message };
     }
   }, [code]);
 
@@ -444,19 +430,8 @@ export default function Flowchart() {
     });
 
   return (
-    <div>
-      <h2>Flowchart</h2>
-      <p className="fc-subtitle">
-        Paste Java code below to generate a flowchart.
-      </p>
-
-      <textarea
-        className="fc-textarea"
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-        rows={14}
-        spellCheck={false}
-      />
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <h2 style={{ display: 'none' }}>Flowchart</h2>
 
       {error && <div className="fc-error">Error: {error}</div>}
 
@@ -492,7 +467,7 @@ export default function Flowchart() {
             {flatNodes.map(renderNode)}
           </svg>
         ) : (
-          <div className="fc-empty">No flowchart to display. Paste some Java code above.</div>
+          <div className="fc-empty">No flowchart to display. Edit the code on the left.</div>
         )}
       </div>
     </div>

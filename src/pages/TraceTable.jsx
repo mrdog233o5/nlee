@@ -1,35 +1,7 @@
 import { useState, useMemo } from 'react';
 import { simulateJavaCode } from '../utils/traceTableSimulator';
 
-const SAMPLE_CODE = `public class LongestStreak {
-  public static void main(String[] args) {
-    int num = 114442226;
-    int numCopy = num;
-    int streak = 1;
-    int maxStreak = 1;
-    int streakNumber = -1;
-    int prevDigit = numCopy % 10;
-    numCopy /= 10;
-    while (prevDigit > 0 || numCopy > 0) {
-      int digit = numCopy % 10;
-      if (prevDigit == digit) {
-        streak++;
-      } else {
-        if (streak > maxStreak) {
-          maxStreak = streak;
-          streakNumber = prevDigit;
-        }
-        streak = 1;
-      }
-      prevDigit = digit;
-      numCopy /= 10;
-    }
-    System.out.println(streakNumber + " " + maxStreak);
-  }
-}`;
-
-export default function TraceTable() {
-  const [code, setCode] = useState(SAMPLE_CODE);
+export default function TraceTable({ code }) {
 
   const result = useMemo(() => simulateJavaCode(code), [code]);
 
@@ -86,24 +58,13 @@ export default function TraceTable() {
   };
 
   return (
-    <div>
-      <h2>Trace Table</h2>
-      <p className="fc-subtitle">
-        Paste Java code below to generate a trace table.
-      </p>
-
-      <textarea
-        className="fc-textarea"
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-        rows={14}
-        spellCheck={false}
-      />
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <h2 style={{ display: 'none' }}>Trace Table</h2>
 
       {error && <div className="fc-error">Error: {error}</div>}
 
       {columns.length > 0 && (
-        <div className="fc-toolbar" style={{ marginTop: 6, marginBottom: 6 }}>
+        <div className="fc-toolbar">
           <button className="fc-export-btn" onClick={exportCSV}>
             Export CSV
           </button>
@@ -166,7 +127,6 @@ export default function TraceTable() {
 
                       let displayVal;
                       if (name === 'Output') {
-                        // Only show Output value on the row where println executed
                         displayVal = isLastRow && output ? output : '';
                       } else if (isCond) {
                         displayVal = condEval ? val : '';
@@ -196,7 +156,7 @@ export default function TraceTable() {
           </table>
         ) : (
           !error && (
-            <div className="fc-empty">No trace table to display. Paste some Java code above.</div>
+            <div className="fc-empty">No trace table to display. Edit the code on the left.</div>
           )
         )}
       </div>
