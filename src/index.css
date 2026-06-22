@@ -425,3 +425,21 @@ body {
 .tt-table tbody tr:hover {
   background: #fff9db !important;
 }
+
+.tt-cell-input {
+  background: #f8f0ff;
+}
+
+.tt-input-inner {
+  display: inline-block;
+  min-width: 60px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  outline: none;
+  cursor: text;
+}
+
+.tt-input-inner:focus {
+  background: #fff;
+  box-shadow: 0 0 0 1.5px #93c5fd;
+}

@@ -100,7 +100,7 @@ export default function App() {
             <Routes>
               <Route path="/flowchart" element={<Flowchart code={code} />} />
               <Route path="/trace-table" element={<TraceTable code={code} />} />
-              <Route path="/truth-table" element={<TruthTable />} />
+              <Route path="/truth-table" element={<TruthTable code={code} />} />
               <Route path="*" element={<Navigate to="/flowchart" replace />} />
             </Routes>
           </main>
