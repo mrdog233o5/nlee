@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { simulateJavaCode } from '../utils/traceTableSimulator';
 
 export default function TraceTable({ code }) {
@@ -25,25 +26,108 @@ export default function TraceTable({ code }) {
   const colNames = columns.map((c) => c.name);
   const isConditionCol = (name) => columns.some((c) => c.name === name && c.isCondition);
 
-  const exportCSV = () => {
-    let csv = colNames.join(',') + '\n';
-    for (const row of fullSteps) {
-      const vals = colNames.map((name) => {
-        if (name === 'Output') return output;
-        const condVal = row.conditions[name];
-        if (condVal !== undefined) return condVal;
-        const varVal = row.vars[name];
-        return varVal !== undefined ? varVal : '';
-      });
-      csv += vals.join(',') + '\n';
+  // Compute column groups (shared between table header and export)
+  const groups = useMemo(() => {
+    if (!columns.length) return [];
+    const result = [];
+    let cg = columns[0].group;
+    let start = 0;
+    for (let i = 0; i <= columns.length; i++) {
+      const g = i < columns.length ? columns[i].group : null;
+      if (g !== cg || i === columns.length) {
+        result.push({ label: cg, count: i - start, startCol: start });
+        cg = g;
+        start = i;
+      }
     }
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'trace-table.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    return result;
+  }, [columns]);
+
+  const colGroupCounts = useMemo(() => {
+    const counts = [];
+    let cg = columns[0]?.group;
+    let buf = [];
+    for (let i = 0; i < columns.length; i++) {
+      if (columns[i].group !== cg) {
+        for (const ci of buf) counts[ci] = buf.length;
+        cg = columns[i].group;
+        buf = [];
+      }
+      buf.push(i);
+    }
+    for (const ci of buf) counts[ci] = buf.length;
+    return counts;
+  }, [columns]);
+
+  const hasOutput = useMemo(
+    () => columns.some((c) => c.group === 'output'),
+    [columns]
+  );
+
+  const exportXLSX = () => {
+    const sheetData = [];
+    const merges = [];
+
+    // Row 0: Group headers
+    const groupRow = columns.map((_, i) => {
+      const g = groups.find(g => g.startCol <= i && i < g.startCol + g.count);
+      return i === (g ? g.startCol : 0) ? (g ? g.label : '') : '';
+    });
+    sheetData.push(groupRow);
+
+    // Row 1: Column headers (skip columns in count=1 groups — merged with row 0)
+    const colHeaderRow = columns.map((col, i) =>
+      colGroupCounts[i] === 1 ? '' : col.name
+    );
+    sheetData.push(colHeaderRow);
+
+    // Merges for group headers
+    for (const g of groups) {
+      if (g.count === 1) {
+        // Single-column group: merge row 0-1 vertically
+        merges.push({ s: { r: 0, c: g.startCol }, e: { r: 1, c: g.startCol } });
+      } else {
+        // Multi-column group: merge horizontally across columns
+        merges.push({ s: { r: 0, c: g.startCol }, e: { r: 0, c: g.startCol + g.count - 1 } });
+      }
+    }
+
+    // Data rows (matching web display logic: carry-over, condition eval, output last row)
+    for (let ri = 0; ri < fullSteps.length; ri++) {
+      const row = fullSteps[ri];
+      const isLastRow = ri === fullSteps.length - 1;
+      const dataRow = colNames.map((name, ci) => {
+        if (name === 'Output') return isLastRow && output ? output : '';
+        if (isConditionCol(name)) {
+          const cv = row.conditions[name];
+          return cv !== undefined ? cv : '';
+        }
+        // Variable: show only on first row or when value changes
+        const val = row.vars[name];
+        if (ri === 0) return val ?? '';
+        const pv = fullSteps[ri - 1].vars[name];
+        return val !== pv ? (val ?? '') : '';
+      });
+      sheetData.push(dataRow);
+    }
+
+    // Create workbook with merged cells
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+    ws['!merges'] = merges;
+
+    // Apply cell styles: bold + center for headers, center for data
+    const headerStyle = { font: { bold: true }, alignment: { horizontal: 'center', vertical: 'center' } };
+    const dataStyle = { alignment: { horizontal: 'center', vertical: 'center' } };
+    for (let r = 0; r < sheetData.length; r++) {
+      for (let c = 0; c < (sheetData[r]?.length || 0); c++) {
+        const ref = XLSX.utils.encode_cell({ r, c });
+        if (ws[ref]) ws[ref].s = r < 2 ? headerStyle : dataStyle;
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Trace Table');
+    XLSX.writeFile(wb, 'trace-table.xlsx');
   };
 
   /** Get the previous row's effective value for a column */
@@ -65,8 +149,8 @@ export default function TraceTable({ code }) {
 
       {columns.length > 0 && (
         <div className="fc-toolbar">
-          <button className="fc-export-btn" onClick={exportCSV}>
-            Export CSV
+          <button className="fc-export-btn" onClick={exportXLSX}>
+            Export XLSX
           </button>
         </div>
       )}
@@ -76,37 +160,33 @@ export default function TraceTable({ code }) {
           <table className="tt-table">
             <thead>
               {(() => {
-                const hasOutput = columns.some((c) => c.group === 'output');
                 if (!hasOutput) return null;
-                const groups = [];
-                let currentGroup = columns[0].group;
-                let groupStart = 0;
-                for (let i = 0; i <= columns.length; i++) {
-                  const g = i < columns.length ? columns[i].group : null;
-                  if (g !== currentGroup || i === columns.length) {
-                    groups.push({ label: currentGroup, count: i - groupStart });
-                    currentGroup = g;
-                    groupStart = i;
-                  }
-                }
                 return (
-                  <tr className="tt-group-row">
-                    {groups.map((g, gi) => (
-                      <th key={gi} colSpan={g.count} className="tt-group-header">
-                        {g.label}
-                      </th>
-                    ))}
-                  </tr>
+                  <>
+                    <tr className="tt-group-row">
+                      {groups.map((g, gi) => (
+                        <th
+                          key={gi}
+                          colSpan={g.count}
+                          rowSpan={g.count === 1 ? 2 : 1}
+                          className="tt-group-header"
+                        >
+                          {g.label}
+                        </th>
+                      ))}
+                    </tr>
+                    <tr>
+                      {columns.map((col, i) =>
+                        colGroupCounts[i] === 1 ? null : (
+                          <th key={i} className="tt-col-header" title={col.isCondition ? 'condition' : ''}>
+                            {col.name}
+                          </th>
+                        )
+                      )}
+                    </tr>
+                  </>
                 );
               })()}
-
-              <tr>
-                {columns.map((col, i) => (
-                  <th key={i} className="tt-col-header" title={col.isCondition ? 'condition' : ''}>
-                    {col.name}
-                  </th>
-                ))}
-              </tr>
             </thead>
             <tbody>
               {fullSteps.map((row, ri) => {

@@ -357,7 +357,7 @@ body {
 .tt-table td {
   padding: 6px 12px;
   border: 1px solid #e9ecef;
-  text-align: left;
+  text-align: center;
 }
 
 .tt-group-row th {
