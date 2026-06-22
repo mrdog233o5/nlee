@@ -6,13 +6,20 @@ import TruthTable from './pages/TruthTable'
 import CodeMirror from '@uiw/react-codemirror'
 import { java } from '@codemirror/lang-java'
 
-const SAMPLE_CODE = `public class Example {
+const SAMPLE_CODE = `public class Factorial {
   public static void main(String[] args) {
-    int x = 5;
-    if (x > 3) {
-      System.out.println("Big");
+    // Input
+    int num = 0;
+    // Processing section
+    if (num >= 0) {
+      int factorial = 1;
+      for (int i = 2; i <= num; i++) {
+        factorial *= i;
+      }
+      System.out.println(factorial);
+    } else {
+      System.out.println("Undefined");
     }
-    System.out.println("Done");
   }
 }`
 
