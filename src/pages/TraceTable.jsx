@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { simulateJavaCode } from '../utils/traceTableSimulator';
 
 export default function TraceTable({ code }) {
@@ -64,70 +64,79 @@ export default function TraceTable({ code }) {
     [columns]
   );
 
-  const exportXLSX = () => {
-    const sheetData = [];
-    const merges = [];
+  const exportXLSX = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Trace Table');
+    const nCols = columns.length;
 
-    // Row 0: Group headers
+    // Row 1: Group headers
     const groupRow = columns.map((_, i) => {
       const g = groups.find(g => g.startCol <= i && i < g.startCol + g.count);
       return i === (g ? g.startCol : 0) ? (g ? g.label : '') : '';
     });
-    sheetData.push(groupRow);
 
-    // Row 1: Column headers (skip columns in count=1 groups — merged with row 0)
+    // Row 2: Column headers (skip count=1 groups — merged with row 1)
     const colHeaderRow = columns.map((col, i) =>
       colGroupCounts[i] === 1 ? '' : col.name
     );
-    sheetData.push(colHeaderRow);
 
-    // Merges for group headers
-    for (const g of groups) {
-      if (g.count === 1) {
-        // Single-column group: merge row 0-1 vertically
-        merges.push({ s: { r: 0, c: g.startCol }, e: { r: 1, c: g.startCol } });
-      } else {
-        // Multi-column group: merge horizontally across columns
-        merges.push({ s: { r: 0, c: g.startCol }, e: { r: 0, c: g.startCol + g.count - 1 } });
-      }
-    }
-
-    // Data rows (matching web display logic: carry-over, condition eval, output last row)
-    for (let ri = 0; ri < fullSteps.length; ri++) {
-      const row = fullSteps[ri];
+    // Row 3+: Data rows (web display logic)
+    const dataRows = fullSteps.map((row, ri) => {
       const isLastRow = ri === fullSteps.length - 1;
-      const dataRow = colNames.map((name, ci) => {
+      return colNames.map((name) => {
         if (name === 'Output') return isLastRow && output ? output : '';
         if (isConditionCol(name)) {
           const cv = row.conditions[name];
           return cv !== undefined ? cv : '';
         }
-        // Variable: show only on first row or when value changes
         const val = row.vars[name];
         if (ri === 0) return val ?? '';
         const pv = fullSteps[ri - 1].vars[name];
         return val !== pv ? (val ?? '') : '';
       });
-      sheetData.push(dataRow);
-    }
+    });
 
-    // Create workbook with merged cells
-    const ws = XLSX.utils.aoa_to_sheet(sheetData);
-    ws['!merges'] = merges;
+    // Add all rows
+    ws.addRows([groupRow, colHeaderRow, ...dataRows]);
 
-    // Apply cell styles: bold + center for headers, center for data
-    const headerStyle = { font: { bold: true }, alignment: { horizontal: 'center', vertical: 'center' } };
-    const dataStyle = { alignment: { horizontal: 'center', vertical: 'center' } };
-    for (let r = 0; r < sheetData.length; r++) {
-      for (let c = 0; c < (sheetData[r]?.length || 0); c++) {
-        const ref = XLSX.utils.encode_cell({ r, c });
-        if (ws[ref]) ws[ref].s = r < 2 ? headerStyle : dataStyle;
+    // Merge cells for group headers
+    for (const g of groups) {
+      if (g.count === 1) {
+        // Single-column group: vertical merge (row 1-2)
+        ws.mergeCells(1, g.startCol + 1, 2, g.startCol + 1);
+      } else {
+        // Multi-column group: horizontal merge (row 1 only)
+        ws.mergeCells(1, g.startCol + 1, 1, g.startCol + g.count);
       }
     }
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Trace Table');
-    XLSX.writeFile(wb, 'trace-table.xlsx');
+    // Styles: header rows (1-2) — bold + center
+    for (let c = 1; c <= nCols; c++) {
+      ws.getCell(1, c).font = { bold: true };
+      ws.getCell(1, c).alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getCell(2, c).font = { bold: true };
+      ws.getCell(2, c).alignment = { horizontal: 'center', vertical: 'middle' };
+    }
+
+    // Styles: data rows (3+) — center
+    const lastDataRow = 2 + dataRows.length;
+    for (let r = 3; r <= lastDataRow; r++) {
+      for (let c = 1; c <= nCols; c++) {
+        ws.getCell(r, c).alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+    }
+
+    // Download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'trace-table.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   /** Get the previous row's effective value for a column */
